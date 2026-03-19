@@ -77,9 +77,30 @@ primrec wrote :: "history \<Rightarrow> atxn \<Rightarrow> key \<Rightarrow> ver
 "wrote h t k v = "
 *)
 
+text \<open>A version v of key k is installed in history h if some committed transaction's final
+write to k produced v.\<close>
+
+definition is_installed_version :: "history \<Rightarrow> key \<Rightarrow> version \<Rightarrow> bool" where
+"is_installed_version h k v \<equiv>
+  (\<exists>t \<in> all_atxns h. a_is_committed t \<and>
+    (\<exists>w \<in> ext_awrites t. key w = k \<and> apost_version w = v))"
+
+text \<open>For traceable objects, the version order should reflect the trace structure: the version
+order for key k equals the installed versions along the trace to its maximum version, in trace
+order. This is a natural well-formedness condition that the original formalization lacked --
+without it, the version order could list installed versions in an order inconsistent with the
+version graph, which would break the connection between traces and version orders needed for
+IDSG soundness.\<close>
+
+primrec vo_reflects_trace :: "history \<Rightarrow> object \<Rightarrow> keyVersionOrder \<Rightarrow> bool" where
+"vo_reflects_trace h obj (KeyVersionOrder k vl) =
+  ((is_traceable obj \<and> k = key obj \<and> vl \<noteq> []) \<longrightarrow>
+  (vl = filter (is_installed_version h k)
+               ((initial_version obj) # map apost_version (trace_of obj (last vl)))))"
+
 text \<open>A well-formed history is made up of well formed objects, transactions, and a version order,
-and ensures transactions are over objects, and the version orders are in their corresponding
-objects.\<close>
+and ensures transactions are over objects, the version orders are in their corresponding
+objects, and (for traceable objects) version orders reflect trace structure.\<close>
 
 primrec wf_history :: "history \<Rightarrow> bool" where
 "wf_history (History objs txns vo) = (let h = (History objs txns vo) in
@@ -87,7 +108,9 @@ primrec wf_history :: "history \<Rightarrow> bool" where
                  (\<forall>t. (t \<in> txns) \<longrightarrow> (wf_atxn t)) \<and>
                  (wf_version_order vo) \<and>
                  ((transactions_are_over_objects h) \<and>
-                 (version_order_is_in_corresponding_object h)))"
+                 (version_order_is_in_corresponding_object h)) \<and>
+                 (\<forall>kvo \<in> vo. \<forall>obj \<in> objs.
+                    key kvo = key obj \<longrightarrow> vo_reflects_trace h obj kvo))"
 
 text \<open>We'd like to know if two versions occurred consecutively in the version order for some key.\<close>
 primrec is_next_in_history :: "history \<Rightarrow> key \<Rightarrow> version \<Rightarrow> version \<Rightarrow> bool" where

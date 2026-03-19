@@ -311,17 +311,24 @@ lemma compatible_ret:
                                  ((ret oop) = Some (aret aop)))"
   by (metis is_compatible_op_def is_compatible_option.simps(2) not_Some_eq)
 
+lemma compatible_option_definite:
+  "is_compatible_option x y \<Longrightarrow> is_definite_option x \<Longrightarrow> x = Some y"
+  by (cases x) auto
+
 lemma compatible_definite_same_pre_version:
   "(is_compatible_op oop aop \<and> is_definite oop) \<Longrightarrow> ((pre_version oop) = (pre_version aop))"
-  by (smt aop.exhaust apre_version.simps(1) apre_version.simps(2) is_compatible_op_def is_compatible_option.simps(2) is_definite.simps(1) is_definite.simps(2) is_definite_option.simps(1) oop.exhaust option.exhaust pre_version_aop.simps(1) pre_version_aop.simps(2) pre_version_oop.simps(1) pre_version_oop.simps(2))
+  by (cases oop; cases aop)
+     (auto simp: is_compatible_op_def dest: compatible_option_definite)
 
 lemma compatible_definite_same_post_version:
   "(is_compatible_op oop aop \<and> is_definite oop) \<Longrightarrow> ((post_version oop) = (post_version aop))"
-  by (smt aop.exhaust apost_version.simps(2) compatible_definite_same_pre_version is_compatible_op_def is_compatible_option.simps(2) is_definite.simps(2) is_definite_option.simps(1) oop.exhaust opType.distinct(1) op_type_aop.simps(1) op_type_aop.simps(2) op_type_oop.simps(1) op_type_oop.simps(2) option.exhaust post_version_aop.simps(1) post_version_aop.simps(2) post_version_oop.simps(1) post_version_oop.simps(2) pre_version_aop.simps(1) pre_version_oop.simps(1))
+  by (cases oop; cases aop)
+     (auto simp: is_compatible_op_def dest: compatible_option_definite)
 
 lemma compatible_definite_same_ret:
   "(is_compatible_op oop aop \<and> is_definite oop) \<Longrightarrow> ((ret oop) = (ret aop))"
-  by (smt aop.exhaust aret.simps(1) aret.simps(2) is_compatible_op_def is_compatible_option.simps(2) is_definite.simps(1) is_definite.simps(2) is_definite_option.simps(1) not_None_eq oop.exhaust option.case(2) ret_aop.simps(1) ret_aop.simps(2) ret_oop.simps(1) ret_oop.simps(2))
+  by (cases oop; cases aop)
+     (auto simp: is_compatible_op_def dest: compatible_option_definite split: option.splits)
   
 text \<open>If two operations are compatible and the observed one is definite, they share exactly
 the same values.\<close>

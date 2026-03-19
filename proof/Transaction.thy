@@ -75,21 +75,24 @@ primrec first_per_keys :: "'a::keyed list \<Rightarrow> (key,'a) map" where
 "first_per_keys [] = Map.empty" |
 "first_per_keys (x # xs) = ((first_per_keys xs)((key x):=(Some x)))"
 
+text \<open>We filter to writes-only before finding the last per key, and to reads-only before
+finding the first per key. Without this filter, a read after a write (or vice versa)
+could be incorrectly classified.\<close>
+
 primrec ext_awrites :: "atxn \<Rightarrow> aop set" where
-"ext_awrites (ATxn ops _) = (ran (first_per_keys (rev ops)))"
+"ext_awrites (ATxn ops _) = (ran (first_per_keys (rev (filter (\<lambda>op. op_type op = Write) ops))))"
 
 primrec ext_areads :: "atxn \<Rightarrow> aop set" where
-"ext_areads (ATxn ops _) = (ran (first_per_keys ops))"
+"ext_areads (ATxn ops _) = (ran (first_per_keys (filter (\<lambda>op. op_type op = Read) ops)))"
 
-text \<open>A brief test...\<close>
+text \<open>A brief test. We use key variables since key is an opaque typedecl.\<close>
 
-lemma "(let wx1 = (AWrite 1 [0] 1 [1] []);
-            wx2 = (AWrite 1 [1] 2 [2] []);
-            wy3 = (AWrite 2 [0] 0 [3] []) in
-        {wx1,wy3} = (ext_awrites (ATxn [wx1,wy3,wx1] c)))"
-  apply (simp add: ext_awrites_def ran_def)
-  by (smt Collect_cong Suc_inject insert_compr numeral_1_eq_Suc_0 numeral_2_eq_2 numeral_One
-          singleton_iff zero_neq_one)
+lemma
+  assumes "k1 \<noteq> (k2::key)"
+  shows "(let wx1 = (AWrite k1 [0] 1 [1] []);
+              wy3 = (AWrite k2 [0] 0 [3] []) in
+          {wx1,wy3} = (ext_awrites (ATxn [wx1,wy3,wx1] c)))"
+  using assms by (auto simp: Let_def ext_awrites_def ran_def)
 
 
 
@@ -116,7 +119,7 @@ fun is_compatible_op_list :: "oop list \<Rightarrow> aop list \<Rightarrow> bool
   ((is_compatible_op aop oop) \<and> (is_compatible_op_list aops' oops'))"
 
 lemma is_compatible_op_list_size: "(is_compatible_op_list l1 l2) \<Longrightarrow> ((length l1) = (length l2))"
-  oops
+  by (induct l1 l2 rule: is_compatible_op_list.induct) auto
 
 (* My kingdom for indicating shadowing in binding exprs: every short name in Isabelle is taken *)
 definition is_compatible_txn :: "otxn \<Rightarrow> atxn \<Rightarrow> bool" where
@@ -128,7 +131,7 @@ text \<open>Some lemmata around compatibility\<close>
 
 lemma is_compatible_txn_op_count: "is_compatible_txn otxn atxn \<Longrightarrow>
   ((size (o_ops otxn)) = (size (a_ops atxn)))"
-  oops
+  by (cases otxn; cases atxn; simp add: is_compatible_txn_def is_compatible_op_list_size)
 
 
 end
