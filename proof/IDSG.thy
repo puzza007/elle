@@ -325,12 +325,66 @@ lemma aop_post_version: "post_version (w::aop) = Some (apost_version w)"
 lemma aop_pre_version: "pre_version (r::aop) = Some (apre_version r)"
   by (cases r) auto
 
-text \<open>The ext_write assumptions state that recoverable writes map to ext_awrites in the
-abstract history. Proving this requires showing that the recovered write is the last write
-to its key in the transaction (non-intermediate), and that position-wise compatibility
-preserves this property. The proof requires reasoning about ext_awrites membership from
-position-based arguments on compatible op lists — infrastructure that would benefit from
-additional helper lemmas about first_per_keys and ran.\<close>
+text \<open>Infrastructure for ext_awrites membership. If w is the last write to its key in the
+op list, it appears in ext_awrites.\<close>
+
+lemma first_per_keys_first_key:
+  "\<forall>y \<in> set ys. key y \<noteq> key x \<Longrightarrow>
+   first_per_keys (ys @ x # zs) (key x) = Some x"
+  by (induct ys) auto
+
+lemma first_per_keys_first_in_ran:
+  "\<forall>y \<in> set ys. key y \<noteq> key x \<Longrightarrow> x \<in> ran (first_per_keys (ys @ x # zs))"
+proof -
+  assume "\<forall>y \<in> set ys. key y \<noteq> key x"
+  then have "first_per_keys (ys @ x # zs) (key x) = Some x"
+    by (rule first_per_keys_first_key)
+  then show ?thesis unfolding ran_def by blast
+qed
+
+text \<open>If w is the last element with key k in a list, it's the first with key k in the
+reversed list. Combined with first_per_keys_first_in_ran, this gives ext_awrites membership.\<close>
+
+lemma last_with_key_first_in_rev:
+  assumes "xs = as @ [w] @ bs" and "\<forall>b \<in> set bs. key b \<noteq> key w"
+  shows "\<exists>cs ds. rev xs = cs @ [w] @ ds \<and> (\<forall>c \<in> set cs. key c \<noteq> key w)"
+  using assms by auto
+
+lemma last_write_in_ext_awrites:
+  assumes "op_type w = Write"
+  and decomp: "filter (\<lambda>op. op_type op = Write) ops = as @ [w] @ bs"
+  and no_later: "\<forall>b \<in> set bs. key b \<noteq> key w"
+  shows "w \<in> ext_awrites (ATxn ops c)"
+proof -
+  have "rev (filter (\<lambda>op. op_type op = Write) ops) = rev bs @ [w] @ rev as"
+    using decomp by simp
+  moreover have "\<forall>b \<in> set (rev bs). key b \<noteq> key w" using no_later by auto
+  ultimately have "w \<in> ran (first_per_keys (rev (filter (\<lambda>op. op_type op = Write) ops)))"
+    using first_per_keys_first_in_ran[of "rev bs" w "rev as"] by simp
+  then show ?thesis by simp
+qed
+
+text \<open>Position-wise compatibility preserves the last-write property: if no later observed
+write to key k exists, no later abstract write to key k exists either.\<close>
+
+lemma compatible_preserves_no_later_write:
+  assumes "is_compatible_op_list oos aos"
+  and "i < length oos"
+  and "\<forall>j. i < j \<longrightarrow> j < length oos \<longrightarrow> op_type (oos ! j) = Write \<longrightarrow> key (oos ! j) \<noteq> k"
+  shows "\<forall>j. i < j \<longrightarrow> j < length aos \<longrightarrow> op_type (aos ! j) = Write \<longrightarrow> key (aos ! j) \<noteq> k"
+proof (intro allI impI)
+  fix j assume "i < j" "j < length aos" "op_type (aos ! j) = Write"
+  have len: "length oos = length aos" using assms(1) is_compatible_op_list_size by blast
+  then have "j < length oos" using \<open>j < length aos\<close> by simp
+  from compatible_op_list_nth[OF assms(1) this]
+  have "is_compatible_op (oos ! j) (aos ! j)" by simp
+  then have "op_type (oos ! j) = op_type (aos ! j)" using compatible_same_type by fastforce
+  then have "op_type (oos ! j) = Write" using \<open>op_type (aos ! j) = Write\<close> by simp
+  moreover have "key (oos ! j) = key (aos ! j)"
+    using \<open>is_compatible_op (oos ! j) (aos ! j)\<close> compatible_same_key by fastforce
+  ultimately show "key (aos ! j) \<noteq> k"
+    using assms(3) \<open>i < j\<close> \<open>j < length oos\<close> by auto
+qed
 
 theorem inferred_wr_sound:
   assumes "inferred_wr_depends obs ivo ot1 ot2"
