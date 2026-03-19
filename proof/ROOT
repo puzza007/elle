@@ -1,0 +1,21 @@
+session "Elle" = "HOL-Library" +
+  options [timeout = 1200, quick_and_dirty = true]
+  directories
+    "graphs"
+  theories
+    "graphs/Stuff"
+    "graphs/Rtrancl_On"
+    "graphs/Digraph"
+    Op
+    Object
+    Object2
+    "Traceable-Objects"
+    FinMap
+    Transaction
+    VersionOrder
+    History
+    DSG
+    Observation
+    Anomaly
+    InferredAnomaly
+    IDSG

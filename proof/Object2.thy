@@ -61,24 +61,31 @@ value "list_append_w [a, b] c"
 
 interpretation list_append: data_type "[]" list_append_w .
 
-text \<open>We want to show this datatype is traceable. First, we prove that applying a sequence of args
-produces that list of args itself.\<close>
+text \<open>We want to show this datatype is traceable. First, we prove a generalized version: applying a
+sequence of args to any starting value ys produces ys @ xs. The original proof had a bug where
+the induction hypothesis did not generalize over the accumulator.\<close>
 
 value "list_append.apply_args x [a,b]"
 
-lemma list_append_args_are_value:"list_append.apply_args [] xs = xs"
-proof (induct xs)
+lemma list_append_args_gen: "list_append.apply_args ys xs = ys @ xs"
+proof (induct xs arbitrary: ys)
   case Nil
-  then show ?case
-    by simp
+  then show ?case by simp
 next
   case (Cons x xs)
   then show ?case
-    apply (simp add: data_type.apply_args_Cons)
-
+    by (simp add: data_type.apply_args_Cons list_append_w_def)
 qed
 
-interpretation list_append_traceable:traceable_data_type "[]" "list_append_w"
-  using list_append.is_traceable_def traceable_data_type_def
+lemma list_append_args_are_value: "list_append.apply_args [] xs = xs"
+  by (simp add: list_append_args_gen)
+
+text \<open>Now we can show list append forms a traceable data type. The key insight is that apply_args
+is injective: if apply_args [] xs1 = apply_args [] xs2, then xs1 = xs2 (since both equal the
+result by the lemma above).\<close>
+
+interpretation list_append_traceable: traceable_data_type "[]" "list_append_w"
+  using list_append_args_are_value list_append.is_traceable_def traceable_data_type_def
+  by fastforce
 
 end

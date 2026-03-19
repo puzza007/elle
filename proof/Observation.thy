@@ -71,37 +71,37 @@ text \<open>Giuliano: you can use the query panel to search for constants or the
 Here, look for a constant of the following type: "(_ \<Rightarrow> _) \<Rightarrow> _ set \<Rightarrow> _ set \<Rightarrow> bool", and it will find:\<close>
 thm Fun.bij_betw_def \<comment> \<open>That is probably what you wanted\<close>
 
-definition total_bij :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> bool" where
-"total_bij f as bs \<equiv> ((bij f) \<and> (\<forall>a. (a \<in> as) \<longrightarrow> ((f a) \<in> bs)))"
+text \<open>Giuliano correctly pointed out that bij f asserts global bijectivity, not bijectivity between
+the specific sets. The correct notion is bij_betw from Isabelle's library, which asserts that f is
+injective on as and the image of as under f is exactly bs.\<close>
 
-(* I can't even show this? Really?  *)
-text \<open>Giuliano: it's because it does not hold :) You forgot to assume that @{term \<open>a \<in> as\<close>}. 
-It's often a good idea to run nitpick as a first sanity check. Here, it immediately finds a counter-example\<close>
+definition total_bij :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a set \<Rightarrow> 'b set \<Rightarrow> bool" where
+"total_bij f as bs \<equiv> bij_betw f as bs"
+
+text \<open>Without the a \<in> as assumption, this still does not hold -- even with bij_betw.\<close>
 lemma "(total_bij f as bs \<and> (b = (f a))) \<longrightarrow> (b \<in> bs)"
   nitpick
-  apply (simp add:total_bij_def)
-  apply auto
   oops
 
 lemma my_lemma:
-  assumes "total_bij f as bs" and "b = f a" and "a \<in> as" 
-  shows "(b \<in> bs)" \<comment> \<open>Note that this syntax is better becuase it produces a lemma in rule format, ready to be applied without transformation.\<close>
-  using assms total_bij_def by fastforce \<comment> \<open>found by sledgehammer in a few seconds\<close>
+  assumes "total_bij f as bs" and "b = f a" and "a \<in> as"
+  shows "(b \<in> bs)"
+  using assms unfolding total_bij_def bij_betw_def by blast
 
 lemma my_lemma_bad:
   "total_bij f as bs \<and> b = f a \<and> a \<in> as \<longrightarrow> b \<in> bs"
-  using total_bij_def by fastforce
+  unfolding total_bij_def bij_betw_def by blast
 
-text \<open>Now check what the lemmas looks like with @{command thm}\<close>
-thm my_lemma \<comment> \<open>In rule form\<close>
-thm my_lemma_bad \<comment> \<open>Not in rule form; cannot be applied directly by generic proof tools like auto\<close>
+text \<open>With bij_betw, the image equality now holds, since bij_betw f a b implies f ` a = b.\<close>
 
-(* Huh, would have thought this would be easy *)
-lemma total_bij_image1: "(total_bij f a b) \<Longrightarrow> ((f`a) = b)" 
-  nitpick \<comment> \<open>Again, nitpick shows that it does not hold\<close>
-  apply (simp add: total_bij_def)
+lemma total_bij_image: "(total_bij f a b) \<Longrightarrow> ((f`a) = b)"
+  unfolding total_bij_def bij_betw_def by simp
 
-  oops
+lemma total_bij_inj_on: "total_bij f as bs \<Longrightarrow> inj_on f as"
+  unfolding total_bij_def bij_betw_def by simp
+
+lemma total_bij_surj: "total_bij f as bs \<Longrightarrow> b \<in> bs \<Longrightarrow> \<exists>a \<in> as. f a = b"
+  unfolding total_bij_def bij_betw_def by (auto simp: image_def)
 
 text \<open>Well-formed interpretations are made up of a well-formed observation, a bijection between
 observed and abstract transactions, and a well-formed history, such that the observation and 
@@ -118,16 +118,43 @@ text \<open>This lets us talk about corresponding transactions via that bijectio
 primrec corresponding_atxn :: "interp \<Rightarrow> otxn \<Rightarrow> atxn" where
 "corresponding_atxn (Interp obs m h) otxn = (m otxn)"
 
+text \<open>The inverse direction uses THE (definite description) scoped to the observed transactions,
+where injectivity of m is guaranteed by bij_betw.\<close>
+
 primrec corresponding_otxn :: "interp \<Rightarrow> atxn \<Rightarrow> otxn" where
-"corresponding_otxn (Interp obs m h) atxn = (THE otxn. atxn = m otxn)"
+"corresponding_otxn (Interp obs m h) atxn = (THE otxn. otxn \<in> all_otxns obs \<and> atxn = m otxn)"
 
-text \<open>These are invertible, thanks to m being bijective.\<close>
+text \<open>These are invertible, thanks to m being bijective on the observed transactions.\<close>
 
-lemma "(corresponding_otxn (Interp obs h m) atxn) \<in> (all_otxns obs)"
+lemma corresponding_otxn_exists:
+  assumes "wf_interpretation (Interp obs m h)" and "atxn \<in> all_atxns h"
+  shows "\<exists>ot \<in> all_otxns obs. m ot = atxn"
+proof -
+  from assms(1) have "bij_betw m (all_otxns obs) (all_atxns h)"
+    by (simp add: total_bij_def)
+  then have "m ` (all_otxns obs) = all_atxns h" by (simp add: bij_betw_def)
+  with assms(2) show ?thesis by (metis imageE)
+qed
 
-
-lemma corresponding_invertible: "(corresponding_otxn i (corresponding_atxn i t)) = t"
-  oops
+lemma corresponding_invertible:
+  assumes "wf_interpretation (Interp obs m h)" and "t \<in> all_otxns obs"
+  shows "corresponding_otxn (Interp obs m h) (corresponding_atxn (Interp obs m h) t) = t"
+proof -
+  have inj: "inj_on m (all_otxns obs)"
+    using assms(1) by (simp add: total_bij_def bij_betw_def)
+  have "corresponding_atxn (Interp obs m h) t = m t" by simp
+  moreover have "corresponding_otxn (Interp obs m h) (m t) =
+    (THE otxn. otxn \<in> all_otxns obs \<and> m t = m otxn)" by simp
+  moreover have "(THE otxn. otxn \<in> all_otxns obs \<and> m t = m otxn) = t"
+  proof (rule the_equality)
+    show "t \<in> all_otxns obs \<and> m t = m t" using assms(2) by simp
+  next
+    fix otxn
+    assume "otxn \<in> all_otxns obs \<and> m t = m otxn"
+    then show "otxn = t" using inj assms(2) by (auto dest: inj_onD)
+  qed
+  ultimately show ?thesis by simp
+qed
 
 section \<open>Recoverability\<close>
 
