@@ -8,11 +8,15 @@ text \<open>We begin by formalizing three types of dependencies between transact
 ww-depends, and rw-depends. The wr-depends relation captures the idea of a transaction t2 reading
 another transaction T1's write.\<close>
 
+text \<open>Per Adya: Tj directly read-depends on Ti if Ti installs xi and Tj reads xi.
+We use all_aops (any read in the transaction) rather than ext_areads (first read per key)
+to match Adya's definition, which says "reads" not "externally reads."\<close>
+
 definition wr_depends :: "history \<Rightarrow> atxn \<Rightarrow> atxn \<Rightarrow> bool" where
 "wr_depends h t1 t2 \<equiv> \<exists>w1 r2. (a_is_committed t1) \<and>
                               (a_is_committed t2) \<and>
                               (w1 \<in> ext_awrites t1) \<and>
-                              (r2 \<in> ext_areads t2) \<and>
+                              (r2 \<in> all_aops t2) \<and> (op_type r2 = Read) \<and>
                               ((key w1) = (key r2)) \<and>
                               ((post_version w1) = (pre_version r2))"
 
@@ -47,7 +51,7 @@ definition rw_depends :: "history \<Rightarrow> atxn \<Rightarrow> atxn \<Righta
 "rw_depends h t1 t2 \<equiv> \<exists>r1 w2.
   (a_is_committed t1) \<and>
   (a_is_committed t2) \<and>
-  (r1 \<in> ext_areads t1) \<and>
+  (r1 \<in> all_aops t1) \<and> (op_type r1 = Read) \<and>
   (w2 \<in> ext_awrites t2) \<and>
   ((key r1) = (key w2)) \<and>
   (is_next_in_history h (key r1) (apost_version r1) (apost_version w2))"

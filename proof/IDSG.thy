@@ -328,28 +328,32 @@ lemma aop_pre_version: "pre_version (r::aop) = Some (apre_version r)"
 theorem inferred_wr_sound:
   assumes "inferred_wr_depends obs ivo ot1 ot2"
   and "a_is_committed (m ot1)" and "a_is_committed (m ot2)"
+  and wfi: "wf_interpretation (Interp obs m h)"
   and ext_write: "\<And>k v. is_recoverable obs k v ot1
     \<Longrightarrow> \<exists>w \<in> ext_awrites (m ot1). key w = k \<and> apost_version w = v"
-  and ext_read: "\<And>k v. (ORead k (Some v)) \<in> all_oops ot2
-    \<Longrightarrow> \<exists>r \<in> ext_areads (m ot2). key r = k \<and> apre_version r = v"
   shows "wr_depends h (m ot1) (m ot2)"
 proof -
   from assms(1) obtain k xi where
     rec1: "is_recoverable obs k xi ot1" and
+    ot2_in: "ot2 \<in> all_otxns obs" and
     read2: "(ORead k (Some xi)) \<in> all_oops ot2"
     unfolding inferred_wr_depends_def by auto
   from ext_write[OF rec1] obtain w1 where
     w1_in: "w1 \<in> ext_awrites (m ot1)" and w1_key: "key w1 = k"
     and w1_post: "apost_version w1 = xi" by auto
-  from ext_read[OF read2] obtain r2 where
-    r2_in: "r2 \<in> ext_areads (m ot2)" and r2_key: "key r2 = k"
-    and r2_pre: "apre_version r2 = xi" by auto
+  have compat2: "is_compatible_txn ot2 (m ot2)"
+    using wfi ot2_in wf_interp_compatible by blast
+  have "ORead k (Some xi) \<in> set (o_ops ot2)" using read2 by (cases ot2) auto
+  moreover have "is_compatible_op_list (o_ops ot2) (a_ops (m ot2))"
+    using compat2 by (cases ot2; cases "m ot2"; simp add: is_compatible_txn_def)
+  ultimately have "ARead k xi \<in> set (a_ops (m ot2))"
+    using compatible_op_list_has_read by blast
+  then have r2_in: "ARead k xi \<in> all_aops (m ot2)" by (cases "m ot2") auto
   show ?thesis
     unfolding wr_depends_def
     apply (rule_tac x=w1 in exI)
-    apply (rule_tac x=r2 in exI)
-    using assms(2,3) w1_in r2_in w1_key r2_key w1_post r2_pre
-          aop_post_version aop_pre_version by auto
+    apply (rule_tac x="ARead k xi" in exI)
+    using assms(2,3) w1_in r2_in w1_key w1_post aop_post_version by auto
 qed
 
 theorem inferred_ww_sound:
@@ -398,20 +402,25 @@ theorem inferred_rw_sound:
   assumes "inferred_rw_depends obs ivo ot1 ot2"
   and "a_is_committed (m ot1)" and "a_is_committed (m ot2)"
   and pfx: "is_prefix_version_order ivo (case h of History _ _ vo \<Rightarrow> vo)"
-  and ext_read: "\<And>k v. (ORead k (Some v)) \<in> all_oops ot1
-    \<Longrightarrow> \<exists>r \<in> ext_areads (m ot1). key r = k \<and> apost_version r = v"
+  and wfi: "wf_interpretation (Interp obs m h)"
   and ext_write: "\<And>k v. is_recoverable obs k v ot2
     \<Longrightarrow> \<exists>w \<in> ext_awrites (m ot2). key w = k \<and> apost_version w = v"
   shows "rw_depends h (m ot1) (m ot2)"
 proof -
   from assms(1) obtain k xi xj where
+    ot1_in: "ot1 \<in> all_otxns obs" and
     read1: "(ORead k (Some xi)) \<in> all_oops ot1" and
     rec2: "is_recoverable obs k xj ot2" and
     inext: "\<exists>kvo \<in> ivo. key kvo = k \<and> is_next_in_key_version_order kvo xi xj"
     unfolding inferred_rw_depends_def by auto
-  from ext_read[OF read1] obtain r1 where
-    r1_in: "r1 \<in> ext_areads (m ot1)" and r1_key: "key r1 = k"
-    and r1_post: "apost_version r1 = xi" by auto
+  have compat1: "is_compatible_txn ot1 (m ot1)"
+    using wfi ot1_in wf_interp_compatible by blast
+  have "ORead k (Some xi) \<in> set (o_ops ot1)" using read1 by (cases ot1) auto
+  moreover have "is_compatible_op_list (o_ops ot1) (a_ops (m ot1))"
+    using compat1 by (cases ot1; cases "m ot1"; simp add: is_compatible_txn_def)
+  ultimately have "ARead k xi \<in> set (a_ops (m ot1))"
+    using compatible_op_list_has_read by blast
+  then have r1_in: "ARead k xi \<in> all_aops (m ot1)" by (cases "m ot1") auto
   from ext_write[OF rec2] obtain w2 where
     w2_in: "w2 \<in> ext_awrites (m ot2)" and w2_key: "key w2 = k"
     and w2_post: "apost_version w2 = xj" by auto
@@ -430,9 +439,9 @@ proof -
   qed
   show ?thesis
     unfolding rw_depends_def
-    apply (rule_tac x=r1 in exI)
+    apply (rule_tac x="ARead k xi" in exI)
     apply (rule_tac x=w2 in exI)
-    using assms(2,3) r1_in w2_in r1_key w2_key r1_post w2_post next_h
+    using assms(2,3) r1_in w2_in w2_key w2_post next_h
           aop_post_version by auto
 qed
 
