@@ -127,6 +127,11 @@ lemma trace_version_list_hd:
 lemma filter_sublist: "set (filter P xs) \<subseteq> set xs"
   by auto
 
+text \<open>Filtering preserves the prefix relationship.\<close>
+
+lemma filter_prefix: "is_prefix xs ys \<Longrightarrow> is_prefix (filter P xs) (filter P ys)"
+  unfolding is_prefix_def by auto
+
 
 text \<open>The paper requires the observation to be consistent: for each traceable object x,
 every committed-read version of x appears in the trace of x_longest. This ensures all
@@ -139,20 +144,14 @@ definition consistent_observation :: "observation \<Rightarrow> bool" where
     (\<forall>v \<in> committed_read_versions obs (key obj).
        v \<in> set (trace_version_list obj (x_longest obs obj))))"
 
-text \<open>The per-object prefix property states that the inferred version list for each object
-is a prefix of the actual version order in the history. Proving this from first principles
-requires connecting traceability, consistency, cleanness, and version order compatibility --
-the paper describes this argument (Section 4.3.2) but omits the formal proof.
+text \<open>With vo_reflects_trace in wf_history, the per-object prefix property follows from:
+1. The version order equals the installed versions along the trace (vo_reflects_trace)
+2. x_longest's trace is a prefix of (last vl_h)'s trace (for traceable objects)
+3. Filtering preserves prefix (filter_prefix)
+4. is_installed_in_obs matches is_installed_version through compatibility
 
-We state the per-object property as an explicit assumption below. To discharge it for a
-concrete observation, one must show that for each traceable object, the installed versions
-in the trace of x_longest form a prefix of the history's version order. This holds when:
-1. The history is clean (no aborted reads, intermediate reads, or dirty updates)
-2. The observation is consistent (all committed reads lie on a single trace)
-3. The version order respects the version graph (from wf_history)\<close>
-
-text \<open>Assembly: given per-object prefix, the global prefix property follows by unfolding
-the definitions. This reduces the global property to individual objects.\<close>
+We prove the assembly (global from per-object) unconditionally, and state the
+per-object property with the assumptions needed to discharge it.\<close>
 
 lemma inferred_vo_is_prefix_assembly:
   assumes per_object_prefix:
@@ -162,6 +161,64 @@ lemma inferred_vo_is_prefix_assembly:
   shows "is_prefix_version_order (inferred_version_order obs) hvo"
   unfolding is_prefix_version_order_def inferred_version_order_def
   using per_object_prefix by auto
+
+text \<open>The per-object prefix property: for traceable objects with vo_reflects_trace,
+the inferred version list is a prefix of the version order. This requires:
+- The trace of x_longest is a prefix of the trace of last vl_h
+- is_installed_in_obs matches is_installed_version through the interpretation
+Both are assumptions that can be discharged for concrete traceable datatypes.\<close>
+
+lemma per_object_prefix_from_wf:
+  assumes wf: "wf_history h"
+  and obj_in: "obj \<in> all_objects h"
+  and traceable: "is_traceable obj"
+  and kvo_in: "(KeyVersionOrder (key obj) vl_h) \<in> (case h of History _ _ vo \<Rightarrow> vo)"
+  and vl_ne: "vl_h \<noteq> []"
+  and trace_prefix: "is_prefix
+    (trace_version_list obj (x_longest obs obj))
+    (trace_version_list obj (last vl_h))"
+  and installed_match: "\<And>v. v \<in> set (trace_version_list obj (x_longest obs obj)) \<Longrightarrow>
+    is_installed_in_obs obs (key obj) v = is_installed_version h (key obj) v"
+  shows "is_prefix (inferred_version_list obs obj) vl_h"
+proof -
+  have reflects: "vo_reflects_trace h obj (KeyVersionOrder (key obj) vl_h)"
+  proof (cases h)
+    case (History objs txns vo)
+    then have "KeyVersionOrder (key obj) vl_h \<in> vo" using kvo_in by simp
+    moreover have "obj \<in> objs" using obj_in History by simp
+    moreover have "\<forall>kvo \<in> vo. \<forall>ob \<in> objs. key kvo = key ob \<longrightarrow>
+      vo_reflects_trace (History objs txns vo) ob kvo"
+      using wf History by auto
+    moreover have "key (KeyVersionOrder (key obj) vl_h) = key obj" by simp
+    ultimately show ?thesis using History by blast
+  qed
+  then have vl_raw: "vl_h = filter (is_installed_version h (key obj))
+    ((initial_version obj) # map apost_version (trace_of obj (last vl_h)))"
+  proof -
+    from reflects have "(is_traceable obj \<and> key obj = key obj \<and> vl_h \<noteq> []) \<longrightarrow>
+      (vl_h = filter (is_installed_version h (key obj))
+        ((initial_version obj) # map apost_version (trace_of obj (last vl_h))))"
+      by (simp only: vo_reflects_trace.simps)
+    then show ?thesis using traceable vl_ne by blast
+  qed
+  then have vl_eq: "vl_h = filter (is_installed_version h (key obj))
+    (trace_version_list obj (last vl_h))"
+    unfolding trace_version_list_def .
+  have rewrite_filter: "filter (is_installed_in_obs obs (key obj))
+                               (trace_version_list obj (x_longest obs obj))
+                        = filter (is_installed_version h (key obj))
+                                 (trace_version_list obj (x_longest obs obj))"
+    using installed_match by (auto intro: filter_cong)
+  have "is_prefix (filter (is_installed_version h (key obj))
+                          (trace_version_list obj (x_longest obs obj)))
+                  (filter (is_installed_version h (key obj))
+                          (trace_version_list obj (last vl_h)))"
+    using filter_prefix[OF trace_prefix] .
+  then have "is_prefix (filter (is_installed_in_obs obs (key obj))
+                               (trace_version_list obj (x_longest obs obj))) vl_h"
+    using rewrite_filter vl_eq by simp
+  then show ?thesis unfolding inferred_version_list_def by simp
+qed
 
 
 section \<open>Inferred Dependencies\<close>
