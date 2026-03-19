@@ -312,18 +312,25 @@ section \<open>Dependency Soundness\<close>
 text \<open>Each inferred dependency implies the corresponding actual dependency in every
 clean interpretation whose version order extends the inferred one.
 
-The assumptions ext_write and ext_read capture that recoverable writes and observed reads
-correspond to ext_awrites and ext_areads respectively in the abstract history. These
-follow from trace-recoverability and cleanness in the paper's argument.
-
 The committed assumptions follow from the fact that in clean histories, versions in
-the version order are installed by committed transactions.\<close>
+the version order are installed by committed transactions.
+
+The ext_write assumptions capture that recoverable, non-intermediate writes correspond
+to ext_awrites in the abstract history. This follows from position-wise compatibility:
+if no later observed write to key k exists, no later abstract write to k exists either.\<close>
 
 lemma aop_post_version: "post_version (w::aop) = Some (apost_version w)"
   by (cases w) auto
 
 lemma aop_pre_version: "pre_version (r::aop) = Some (apre_version r)"
   by (cases r) auto
+
+text \<open>The ext_write assumptions state that recoverable writes map to ext_awrites in the
+abstract history. Proving this requires showing that the recovered write is the last write
+to its key in the transaction (non-intermediate), and that position-wise compatibility
+preserves this property. The proof requires reasoning about ext_awrites membership from
+position-based arguments on compatible op lists — infrastructure that would benefit from
+additional helper lemmas about first_per_keys and ran.\<close>
 
 theorem inferred_wr_sound:
   assumes "inferred_wr_depends obs ivo ot1 ot2"
