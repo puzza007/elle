@@ -139,29 +139,27 @@ definition consistent_observation :: "observation \<Rightarrow> bool" where
     (\<forall>v \<in> committed_read_versions obs (key obj).
        v \<in> set (trace_version_list obj (x_longest obs obj))))"
 
-text \<open>The core per-object property: in a clean interpretation of a consistent, trace-recoverable
-observation over traceable objects, the inferred version list for each object is a prefix of
-the actual version order.
+text \<open>The per-object prefix property states that the inferred version list for each object
+is a prefix of the actual version order in the history. Proving this from first principles
+requires connecting traceability, consistency, cleanness, and version order compatibility --
+the paper describes this argument (Section 4.3.2) but omits the formal proof.
 
-This requires connecting:
-1. Traceability: unique traces in the version graph
-2. Consistency: all committed reads lie on a single chain
-3. Cleanness: no aborted reads, intermediate reads, or dirty updates
-4. Version order consistency: the version order respects the version graph
+We state the per-object property as an explicit assumption below. To discharge it for a
+concrete observation, one must show that for each traceable object, the installed versions
+in the trace of x_longest form a prefix of the history's version order. This holds when:
+1. The history is clean (no aborted reads, intermediate reads, or dirty updates)
+2. The observation is consistent (all committed reads lie on a single trace)
+3. The version order respects the version graph (from wf_history)\<close>
 
-The paper asserts this holds (Section 4.3.2) but omits the detailed proof. We capture the
-property as an assumption and prove the assembly.\<close>
+text \<open>Assembly: given per-object prefix, the global prefix property follows by unfolding
+the definitions. This reduces the global property to individual objects.\<close>
 
-theorem inferred_vo_is_prefix:
-  assumes "wf_interpretation (Interp obs m h)"
-  and "clean_history h"
-  and "\<forall>obj \<in> all_objects obs. is_traceable obj"
-  and "consistent_observation obs"
-  and per_object_prefix:
+lemma inferred_vo_is_prefix_assembly:
+  assumes per_object_prefix:
     "\<And>obj. obj \<in> all_objects obs \<Longrightarrow>
-      \<exists>vl_h. (KeyVersionOrder (key obj) vl_h) \<in> (case h of History _ _ vo \<Rightarrow> vo) \<and>
+      \<exists>vl_h. (KeyVersionOrder (key obj) vl_h) \<in> hvo \<and>
              is_prefix (inferred_version_list obs obj) vl_h"
-  shows "is_prefix_version_order (inferred_version_order obs) (case h of History _ _ vo \<Rightarrow> vo)"
+  shows "is_prefix_version_order (inferred_version_order obs) hvo"
   unfolding is_prefix_version_order_def inferred_version_order_def
   using per_object_prefix by auto
 
