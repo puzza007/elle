@@ -144,6 +144,39 @@ definition consistent_observation :: "observation \<Rightarrow> bool" where
     (\<forall>v \<in> committed_read_versions obs (key obj).
        v \<in> set (trace_version_list obj (x_longest obs obj))))"
 
+text \<open>For traceable objects, sub-traces are prefixes: if A appears on the trace to B,
+then the trace version list to A is a prefix of the trace version list to B.
+This follows from traceable_trace_prefix in Object.thy.\<close>
+
+lemma traceable_sub_trace_prefix:
+  assumes "is_traceable obj"
+  and "v \<in> set (map apost_version (trace_of obj w))"
+  and "v \<in> all_versions obj"
+  and "v \<noteq> initial_version obj"
+  and "w \<in> all_versions obj"
+  and "w \<noteq> initial_version obj"
+  shows "is_prefix (trace_version_list obj v) (trace_version_list obj w)"
+proof -
+  let ?p = "trace_of obj w"
+  from assms(1,5,6) have "\<exists>!q. is_trace_of obj q w" unfolding is_traceable_def by auto
+  then have p_trace: "is_trace_of obj ?p w"
+    unfolding trace_of_def using theI' by metis
+  from assms(2) obtain i where i_bound: "i < length ?p" and v_eq: "v = apost_version (?p ! i)"
+    by (auto simp: in_set_conv_nth)
+  from traceable_trace_prefix[OF assms(1) p_trace refl i_bound v_eq assms(3,4)]
+  obtain zs where "trace_of obj w = trace_of obj v @ zs" by auto
+  then have "trace_version_list obj w =
+    (initial_version obj) # map apost_version (trace_of obj v @ zs)"
+    unfolding trace_version_list_def by simp
+  then have "trace_version_list obj w =
+    (initial_version obj) # map apost_version (trace_of obj v) @ map apost_version zs"
+    by simp
+  then have "trace_version_list obj w =
+    trace_version_list obj v @ map apost_version zs"
+    unfolding trace_version_list_def by simp
+  then show ?thesis unfolding is_prefix_def by auto
+qed
+
 text \<open>With vo_reflects_trace in wf_history, the per-object prefix property follows from:
 1. The version order equals the installed versions along the trace (vo_reflects_trace)
 2. x_longest's trace is a prefix of (last vl_h)'s trace (for traceable objects)

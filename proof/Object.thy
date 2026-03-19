@@ -558,6 +558,86 @@ proof -
     using bp_path bp_in_graph bp_hd bp_last bp_nonempty pf(3) by auto
 qed
 
+text \<open>Taking a prefix of a trace yields a trace to the intermediate version.\<close>
+
+lemma is_path_prefix:
+  "is_path (xs @ ys) \<Longrightarrow> xs \<noteq> [] \<Longrightarrow> is_path xs"
+proof (induct ys rule: rev_induct)
+  case Nil then show ?case by simp
+next
+  case (snoc y ys)
+  show ?case
+  proof (cases "xs @ ys")
+    case Nil then show ?thesis using snoc.prems(2) by simp
+  next
+    case (Cons a rest)
+    then have "xs @ ys \<noteq> []" by simp
+    have "is_path ((xs @ ys) @ [y])" using snoc.prems(1) by simp
+    then have "is_path (xs @ ys)" using is_path_append_single \<open>xs @ ys \<noteq> []\<close> by blast
+    then show ?thesis using snoc.hyps snoc.prems(2) by simp
+  qed
+qed
+
+lemma is_path_take:
+  "is_path p \<Longrightarrow> n > 0 \<Longrightarrow> n \<le> length p \<Longrightarrow> is_path (take n p)"
+proof -
+  assume "is_path p" "n > 0" "n \<le> length p"
+  then have "p = take n p @ drop n p" by simp
+  moreover have "take n p \<noteq> []" using \<open>n > 0\<close> \<open>n \<le> length p\<close> by auto
+  ultimately show ?thesis using \<open>is_path p\<close> is_path_prefix by metis
+qed
+
+lemma is_path_in_graph_take:
+  "is_path_in_graph p g \<Longrightarrow> is_path_in_graph (take n p) g"
+proof (induct p arbitrary: n)
+  case Nil then show ?case by simp
+next
+  case (Cons w rest) then show ?case by (cases n) auto
+qed
+
+lemma trace_take:
+  assumes "is_trace_of obj p v" and "n > 0" and "n \<le> length p"
+  shows "is_trace_of obj (take n p) (apost_version (p ! (n - 1)))"
+proof -
+  from assms(1) have pf: "is_path p" "is_path_in_graph p (version_graph obj)"
+    "initial_version obj = apre_version (hd p)" "v = apost_version (last p)"
+    unfolding is_trace_of_def by auto
+  have tk_path: "is_path (take n p)" using is_path_take[OF pf(1) assms(2,3)] .
+  have tk_in_graph: "is_path_in_graph (take n p) (version_graph obj)"
+    using is_path_in_graph_take[OF pf(2)] .
+  have tk_ne: "take n p \<noteq> []" using assms(2,3) by auto
+  have tk_hd: "hd (take n p) = hd p" using assms(2,3) by (cases p) auto
+  have "length (take n p) = n" using assms(3) by simp
+  then have tk_last: "last (take n p) = p ! (n - 1)"
+    using tk_ne nth_take[of "n - 1" n p] assms(2)
+    by (simp add: last_conv_nth)
+  show ?thesis unfolding is_trace_of_def
+    using tk_path tk_in_graph tk_ne tk_hd tk_last pf(3) by auto
+qed
+
+text \<open>For traceable objects, if a version v appears as a post-version in the trace to w,
+then trace_of obj v is a prefix of trace_of obj w.\<close>
+
+lemma traceable_trace_prefix:
+  assumes "is_traceable obj"
+  and "is_trace_of obj p w" and "p = trace_of obj w"
+  and "i < length p" and "v = apost_version (p ! i)"
+  and "v \<in> all_versions obj" and "v \<noteq> initial_version obj"
+  shows "\<exists>zs. trace_of obj w = trace_of obj v @ zs"
+proof -
+  have tk_trace: "is_trace_of obj (take (Suc i) p) v"
+    using trace_take[OF assms(2), of "Suc i"] assms(4,5) by simp
+  have "take (Suc i) p = trace_of obj v"
+  proof -
+    from assms(1,6,7) have "\<exists>!q. is_trace_of obj q v" unfolding is_traceable_def by auto
+    then show ?thesis using tk_trace theI'[of "\<lambda>q. is_trace_of obj q v"]
+      unfolding trace_of_def by (metis the1_equality)
+  qed
+  then have "trace_of obj v = take (Suc i) p" by simp
+  moreover have "take (Suc i) p @ drop (Suc i) p = p" by simp
+  ultimately show ?thesis using assms(3) by metis
+qed
+
 text \<open>The trace construction is the unique valid trace. We proceed by reverse induction on v:
 each version xs@[x] has exactly one incoming arc in the version graph, so the last element of
 any trace is determined, and the remaining prefix is a trace to xs which is unique by the IH.\<close>
