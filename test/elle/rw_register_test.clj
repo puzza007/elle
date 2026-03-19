@@ -274,6 +274,48 @@
                   (Op 1 0 :info "rx_")  [(Op 2 0 :fail "wx2")]
                   (Op 2 0 :fail "wx2")  [(Op 3 0 :ok "wx3")]}))))))
 
+(deftest wfr-version-graphs-test
+  (testing "normal read-then-write infers correct version order"
+    ; T1 reads x=1 then writes x=2. We infer version 1 < 2.
+    (let [h (h/history (pair (op "rx1wx2")))]
+      (is (= {:x {1 #{2}, 2 #{}}}
+             (map-vals g/->clj (wfr-version-graphs h))))))
+
+  (testing "write-only does not infer version order"
+    ; T1 only writes x=2. No read, so no inference.
+    (let [h (h/history (pair (op "wx2")))]
+      (is (= {} (wfr-version-graphs h)))))
+
+  (testing "read-only does not infer version order"
+    ; T1 only reads x=1. No write, so no inference.
+    (let [h (h/history (pair (op "rx1")))]
+      (is (= {} (wfr-version-graphs h)))))
+
+  (testing "write-then-read of same key with stale value"
+    ; T1 writes x=2 then reads x=1 (stale!). This is an internal consistency
+    ; bug in the database. The wfr assumption (writes follow reads) does NOT
+    ; hold here because the write precedes the read. If ext-reads excludes
+    ; reads preceded by writes to the same key, no edge is inferred (correct).
+    ; If ext-reads includes them, we'd get a spurious edge 1 -> 2.
+    ;
+    ; This test documents the expected behavior: no version order should be
+    ; inferred for x, because the read is not "external" (it follows a write
+    ; to the same key).
+    (let [h (h/history (pair (op "wx2rx1")))]
+      (is (= {}
+             (map-vals g/->clj (wfr-version-graphs h))))))
+
+  (testing "write-then-read of different key is fine"
+    ; T1 writes x=2 then reads y=1. Different keys, so wfr applies to y
+    ; if T1 also writes y. But T1 doesn't write y, so no edge.
+    (let [h (h/history (pair (op "wx2ry1")))]
+      (is (= {} (wfr-version-graphs h)))))
+
+  (testing "read x then write x, also read y — only x gets edge"
+    (let [h (h/history (pair (op "rx1wx2ry3")))]
+      (is (= {:x {1 #{2}, 2 #{}}}
+             (map-vals g/->clj (wfr-version-graphs h)))))))
+
 (deftest version-graphs->transaction-graphs-test
   (testing "empty"
     (is (= {}
