@@ -386,12 +386,116 @@ proof (intro allI impI)
     using assms(3) \<open>i < j\<close> \<open>j < length oos\<close> by auto
 qed
 
+text \<open>Convert position-based last-write-to-key into filter decomposition.\<close>
+
+lemma last_write_filter_decomp:
+  assumes "i < length ops" and "ops ! i = w" and "op_type w = Write"
+  and "\<forall>j. i < j \<longrightarrow> j < length ops \<longrightarrow> op_type (ops ! j) = Write \<longrightarrow> key (ops ! j) \<noteq> key w"
+  shows "\<exists>as bs. filter (\<lambda>op. op_type op = Write) ops = as @ [w] @ bs \<and>
+                 (\<forall>b \<in> set bs. key b \<noteq> key w)"
+proof -
+  have split: "ops = take i ops @ w # drop (Suc i) ops"
+    using assms(1,2) id_take_nth_drop by fastforce
+  have "filter (\<lambda>op. op_type op = Write) (take i ops @ w # drop (Suc i) ops) =
+    filter (\<lambda>op. op_type op = Write) (take i ops) @ [w] @
+    filter (\<lambda>op. op_type op = Write) (drop (Suc i) ops)"
+    using assms(3) by simp
+  then have filt: "filter (\<lambda>op. op_type op = Write) ops =
+    filter (\<lambda>op. op_type op = Write) (take i ops) @ [w] @
+    filter (\<lambda>op. op_type op = Write) (drop (Suc i) ops)"
+    using split by simp
+  have "\<forall>b \<in> set (filter (\<lambda>op. op_type op = Write) (drop (Suc i) ops)). key b \<noteq> key w"
+  proof
+    fix b assume "b \<in> set (filter (\<lambda>op. op_type op = Write) (drop (Suc i) ops))"
+    then have "b \<in> set (drop (Suc i) ops)" "op_type b = Write" by auto
+    then obtain j where "j < length (drop (Suc i) ops)" "drop (Suc i) ops ! j = b"
+      by (metis in_set_conv_nth)
+    then have "Suc i + j < length ops" "ops ! (Suc i + j) = b"
+      using assms(1) by auto
+    then show "key b \<noteq> key w" using assms(4) \<open>op_type b = Write\<close> by auto
+  qed
+  then show ?thesis using filt
+    by (rule_tac x="filter (\<lambda>op. op_type op = Write) (take i ops)" in exI,
+        rule_tac x="filter (\<lambda>op. op_type op = Write) (drop (Suc i) ops)" in exI) auto
+qed
+
+text \<open>If a compatible op list has a write to key k at position i with no later write to k,
+the abstract write at position i is in ext_awrites.\<close>
+
+lemma compat_last_write_ext_awrites:
+  assumes cl: "is_compatible_op_list oos aos"
+  and ib: "i < length oos"
+  and ow_w: "op_type (oos ! i) = Write"
+  and ow_k: "key (oos ! i) = k"
+  and no_later: "\<forall>j. i < j \<longrightarrow> j < length oos \<longrightarrow> op_type (oos ! j) = Write \<longrightarrow> key (oos ! j) \<noteq> k"
+  shows "aos ! i \<in> ext_awrites (ATxn aos c) \<and> op_type (aos ! i) = Write \<and> key (aos ! i) = k"
+proof -
+  have len: "length oos = length aos" using cl is_compatible_op_list_size by blast
+  have ib_a: "i < length aos" using ib len by simp
+  have ci: "is_compatible_op (oos ! i) (aos ! i)"
+    using compatible_op_list_nth[OF cl ib] by simp
+  have aw_w: "op_type (aos ! i) = Write"
+    using compatible_same_type[OF ci] ow_w by simp
+  have aw_k: "key (aos ! i) = k"
+    using compatible_same_key[OF ci] ow_k by simp
+  have no_later_a: "\<forall>j. i < j \<longrightarrow> j < length aos \<longrightarrow>
+    op_type (aos ! j) = Write \<longrightarrow> key (aos ! j) \<noteq> k"
+    using compatible_preserves_no_later_write[OF cl ib no_later] .
+  have "\<forall>j. i < j \<longrightarrow> j < length aos \<longrightarrow>
+    op_type (aos ! j) = Write \<longrightarrow> key (aos ! j) \<noteq> key (aos ! i)"
+    using no_later_a aw_k by simp
+  from last_write_filter_decomp[OF ib_a refl aw_w this]
+  obtain as' bs' where decomp: "filter (\<lambda>op. op_type op = Write) aos = as' @ [aos ! i] @ bs'"
+    and bs': "\<forall>b \<in> set bs'. key b \<noteq> key (aos ! i)" by auto
+  have "aos ! i \<in> ext_awrites (ATxn aos c)"
+    using last_write_in_ext_awrites[OF aw_w decomp bs'] by simp
+  then show ?thesis using aw_w aw_k by auto
+qed
+
+definition has_final_write_to :: "otxn \<Rightarrow> key \<Rightarrow> version \<Rightarrow> bool" where
+"has_final_write_to ot k v \<equiv>
+  (\<exists>i. i < length (o_ops ot) \<and>
+       op_type ((o_ops ot) ! i) = Write \<and>
+       key ((o_ops ot) ! i) = k \<and>
+       post_version ((o_ops ot) ! i) = Some v \<and>
+       (\<forall>j. i < j \<longrightarrow> j < length (o_ops ot) \<longrightarrow>
+            op_type ((o_ops ot) ! j) = Write \<longrightarrow> key ((o_ops ot) ! j) \<noteq> k))"
+
+lemma has_final_write_ext_awrites:
+  assumes wfi: "wf_interpretation (Interp obs m h)"
+  and ot_in: "ot \<in> all_otxns obs"
+  and fw: "has_final_write_to ot k v"
+  shows "\<exists>w \<in> ext_awrites (m ot). key w = k \<and> apost_version w = v"
+proof -
+  from fw obtain i where
+    ib: "i < length (o_ops ot)" and
+    ow_w: "op_type ((o_ops ot) ! i) = Write" and
+    ow_k: "key ((o_ops ot) ! i) = k" and
+    ow_pv: "post_version ((o_ops ot) ! i) = Some v" and
+    no_later: "\<forall>j. i < j \<longrightarrow> j < length (o_ops ot) \<longrightarrow>
+      op_type ((o_ops ot) ! j) = Write \<longrightarrow> key ((o_ops ot) ! j) \<noteq> k"
+    unfolding has_final_write_to_def by auto
+  have compat: "is_compatible_txn ot (m ot)" using wfi ot_in wf_interp_compatible by blast
+  have cl: "is_compatible_op_list (o_ops ot) (a_ops (m ot))"
+    using compat by (cases ot; cases "m ot"; simp add: is_compatible_txn_def)
+  obtain aos c where mt: "m ot = ATxn aos c" by (cases "m ot")
+  from compat_last_write_ext_awrites[OF cl ib ow_w ow_k no_later]
+  have in_ext: "a_ops (m ot) ! i \<in> ext_awrites (m ot) \<and> key (a_ops (m ot) ! i) = k"
+    using mt by auto
+  have ci: "is_compatible_op ((o_ops ot) ! i) (a_ops (m ot) ! i)"
+    using compatible_op_list_nth[OF cl ib] by simp
+  have "apost_version (a_ops (m ot) ! i) = v"
+    using compatible_write_definite_post[OF ci] ow_pv by blast
+  then show ?thesis using in_ext by auto
+qed
+
+text \<open>The dependency soundness theorems use has_final_write_to instead of ext_write.\<close>
+
 theorem inferred_wr_sound:
   assumes "inferred_wr_depends obs ivo ot1 ot2"
   and "a_is_committed (m ot1)" and "a_is_committed (m ot2)"
   and wfi: "wf_interpretation (Interp obs m h)"
-  and ext_write: "\<And>k v. is_recoverable obs k v ot1
-    \<Longrightarrow> \<exists>w \<in> ext_awrites (m ot1). key w = k \<and> apost_version w = v"
+  and fw1: "\<And>k v. is_recoverable obs k v ot1 \<Longrightarrow> has_final_write_to ot1 k v"
   shows "wr_depends h (m ot1) (m ot2)"
 proof -
   from assms(1) obtain k xi where
@@ -399,7 +503,9 @@ proof -
     ot2_in: "ot2 \<in> all_otxns obs" and
     read2: "(ORead k (Some xi)) \<in> all_oops ot2"
     unfolding inferred_wr_depends_def by auto
-  from ext_write[OF rec1] obtain w1 where
+  have ot1_in: "ot1 \<in> all_otxns obs" using rec1 recoverable_in_obs by blast
+  from has_final_write_ext_awrites[OF wfi ot1_in fw1[OF rec1]]
+  obtain w1 where
     w1_in: "w1 \<in> ext_awrites (m ot1)" and w1_key: "key w1 = k"
     and w1_post: "apost_version w1 = xi" by auto
   have compat2: "is_compatible_txn ot2 (m ot2)"
@@ -421,10 +527,9 @@ theorem inferred_ww_sound:
   assumes "inferred_ww_depends obs ivo ot1 ot2"
   and "a_is_committed (m ot1)" and "a_is_committed (m ot2)"
   and pfx: "is_prefix_version_order ivo (case h of History _ _ vo \<Rightarrow> vo)"
-  and ext_write: "\<And>k v. is_recoverable obs k v ot1
-    \<Longrightarrow> \<exists>w \<in> ext_awrites (m ot1). key w = k \<and> apost_version w = v"
-  and ext_write2: "\<And>k v. is_recoverable obs k v ot2
-    \<Longrightarrow> \<exists>w \<in> ext_awrites (m ot2). key w = k \<and> apost_version w = v"
+  and wfi: "wf_interpretation (Interp obs m h)"
+  and fw1: "\<And>k v. is_recoverable obs k v ot1 \<Longrightarrow> has_final_write_to ot1 k v"
+  and fw2: "\<And>k v. is_recoverable obs k v ot2 \<Longrightarrow> has_final_write_to ot2 k v"
   shows "ww_depends h (m ot1) (m ot2)"
 proof -
   from assms(1) obtain k xi xj where
@@ -432,10 +537,14 @@ proof -
     rec2: "is_recoverable obs k xj ot2" and
     inext: "\<exists>kvo \<in> ivo. key kvo = k \<and> is_next_in_key_version_order kvo xi xj"
     unfolding inferred_ww_depends_def by auto
-  from ext_write[OF rec1] obtain w1 where
+  have ot1_in: "ot1 \<in> all_otxns obs" using rec1 recoverable_in_obs by blast
+  have ot2_in: "ot2 \<in> all_otxns obs" using rec2 recoverable_in_obs by blast
+  from has_final_write_ext_awrites[OF wfi ot1_in fw1[OF rec1]]
+  obtain w1 where
     w1_in: "w1 \<in> ext_awrites (m ot1)" and w1_key: "key w1 = k"
     and w1_post: "apost_version w1 = xi" by auto
-  from ext_write2[OF rec2] obtain w2 where
+  from has_final_write_ext_awrites[OF wfi ot2_in fw2[OF rec2]]
+  obtain w2 where
     w2_in: "w2 \<in> ext_awrites (m ot2)" and w2_key: "key w2 = k"
     and w2_post: "apost_version w2 = xj" by auto
   from inext obtain kvo where kvo_in: "kvo \<in> ivo" and kvo_key: "key kvo = k"
@@ -464,8 +573,7 @@ theorem inferred_rw_sound:
   and "a_is_committed (m ot1)" and "a_is_committed (m ot2)"
   and pfx: "is_prefix_version_order ivo (case h of History _ _ vo \<Rightarrow> vo)"
   and wfi: "wf_interpretation (Interp obs m h)"
-  and ext_write: "\<And>k v. is_recoverable obs k v ot2
-    \<Longrightarrow> \<exists>w \<in> ext_awrites (m ot2). key w = k \<and> apost_version w = v"
+  and fw2: "\<And>k v. is_recoverable obs k v ot2 \<Longrightarrow> has_final_write_to ot2 k v"
   shows "rw_depends h (m ot1) (m ot2)"
 proof -
   from assms(1) obtain k xi xj where
@@ -482,7 +590,9 @@ proof -
   ultimately have "ARead k xi \<in> set (a_ops (m ot1))"
     using compatible_op_list_has_read by blast
   then have r1_in: "ARead k xi \<in> all_aops (m ot1)" by (cases "m ot1") auto
-  from ext_write[OF rec2] obtain w2 where
+  have ot2_in: "ot2 \<in> all_otxns obs" using rec2 recoverable_in_obs by blast
+  from has_final_write_ext_awrites[OF wfi ot2_in fw2[OF rec2]]
+  obtain w2 where
     w2_in: "w2 \<in> ext_awrites (m ot2)" and w2_key: "key w2 = k"
     and w2_post: "apost_version w2 = xj" by auto
   from inext obtain kvo where kvo_in: "kvo \<in> ivo" and kvo_key: "key kvo = k"
@@ -618,5 +728,6 @@ proof -
   show ?thesis unfolding cycle_def path_def
     using p'_ne u'_in arcs_ok cas_ok dist_ok by auto
 qed
+
 
 end
