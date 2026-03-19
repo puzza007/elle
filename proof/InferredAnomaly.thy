@@ -62,8 +62,6 @@ theorem ig1a_sound:
      obj = (THE ob. ob \<in> all_objects obs \<and> key ob = k);
      ow \<in> all_owrites ot; aw \<in> awrites_of obj v;
      is_compatible_op ow aw\<rbrakk> \<Longrightarrow> post_version ow \<noteq> None"
-  and unique_objects: "\<And>k v ot. \<lbrakk>ot \<in> all_otxns obs; is_recoverable obs k v ot\<rbrakk>
-    \<Longrightarrow> \<exists>!ob. ob \<in> all_objects obs \<and> key ob = k"
   shows "has_g1a h"
 proof -
   from ig obtain ot1 ot2 k v where
@@ -129,7 +127,7 @@ proof -
     have obj_wf: "\<forall>obj \<in> all_objects h. wf_object obj"
       using wf by (cases h; auto)
     have obj_unique: "\<exists>!ob. ob \<in> all_objects obs \<and> key ob = k"
-      using unique_objects[OF ot1_in recoverable] by simp
+      using recoverable_unique_obj[OF recoverable] by simp
     then have obj_props: "?obj \<in> all_objects obs \<and> key ?obj = k"
       by (rule theI')
     have aw_key: "key aw = k"
@@ -236,8 +234,6 @@ theorem ig1b_sound:
      obj = (THE ob. ob \<in> all_objects obs \<and> key ob = k);
      ow \<in> all_owrites ot; aw \<in> awrites_of obj v;
      is_compatible_op ow aw\<rbrakk> \<Longrightarrow> post_version ow \<noteq> None"
-  and unique_objects: "\<And>k v ot. \<lbrakk>ot \<in> all_otxns obs; is_recoverable obs k v ot\<rbrakk>
-    \<Longrightarrow> \<exists>!ob. ob \<in> all_objects obs \<and> key ob = k"
   shows "has_g1b h"
 proof -
   from ig obtain ot1 ot2 k v ow where
@@ -292,7 +288,7 @@ proof -
   ultimately have post_v: "apost_version (a_ops ?at1 ! i) = v" by simp
   have obs_eq: "all_objects obs = all_objects h" using wf by (simp add: is_compatible_observation_def)
   have obj_unique: "\<exists>!ob. ob \<in> all_objects obs \<and> key ob = k"
-    using unique_objects[OF ot1_in recoverable] by simp
+    using recoverable_unique_obj[OF recoverable] by simp
   then have obj_props: "?obj \<in> all_objects obs \<and> key ?obj = k" by (rule theI')
   have aw_in_obj: "aw \<in> all_aops ?obj"
     using aw_in by (auto simp: awrites_of_def all_awrites_def)
@@ -345,8 +341,6 @@ theorem idirty_update_sound:
      obj = (THE ob. ob \<in> all_objects obs \<and> key ob = k);
      ow \<in> all_owrites ot; aw \<in> awrites_of obj v;
      is_compatible_op ow aw\<rbrakk> \<Longrightarrow> post_version ow \<noteq> None"
-  and unique_objects: "\<And>k v ot. \<lbrakk>ot \<in> all_otxns obs; is_recoverable obs k v ot\<rbrakk>
-    \<Longrightarrow> \<exists>!ob. ob \<in> all_objects obs \<and> key ob = k"
   shows "has_dirty_update h"
 proof -
   from ig obtain ot1 ot2 k vi ow2 where
@@ -400,7 +394,7 @@ proof -
     have obj_wf: "\<forall>obj \<in> all_objects h. wf_object obj"
       using wf by (cases h; auto)
     have obj_unique: "\<exists>!ob. ob \<in> all_objects obs \<and> key ob = k"
-      using unique_objects[OF ot1_in recoverable] by simp
+      using recoverable_unique_obj[OF recoverable] by simp
     then have obj_props: "?obj \<in> all_objects obs \<and> key ?obj = k" by (rule theI')
     have "?obj \<in> all_objects h" using obj_props obs_eq by simp
     then have "wf_object_arc_keys ?obj" using obj_wf unfolding wf_object_def by auto

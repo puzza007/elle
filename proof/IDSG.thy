@@ -268,11 +268,13 @@ definition inferred_ww_depends :: "observation \<Rightarrow> versionOrder \<Righ
 definition inferred_wr_depends :: "observation \<Rightarrow> versionOrder \<Rightarrow> otxn \<Rightarrow> otxn \<Rightarrow> bool" where
 "inferred_wr_depends obs ivo ot1 ot2 \<equiv>
   (\<exists>k xi. is_recoverable obs k xi ot1 \<and>
+          ot2 \<in> all_otxns obs \<and>
           (ORead k (Some xi)) \<in> all_oops ot2)"
 
 definition inferred_rw_depends :: "observation \<Rightarrow> versionOrder \<Rightarrow> otxn \<Rightarrow> otxn \<Rightarrow> bool" where
 "inferred_rw_depends obs ivo ot1 ot2 \<equiv>
-  (\<exists>k xi xj. (ORead k (Some xi)) \<in> all_oops ot1 \<and>
+  (\<exists>k xi xj. ot1 \<in> all_otxns obs \<and>
+              (ORead k (Some xi)) \<in> all_oops ot1 \<and>
               is_recoverable obs k xj ot2 \<and>
               (\<exists>kvo \<in> ivo. key kvo = k \<and> is_next_in_key_version_order kvo xi xj))"
 
@@ -462,6 +464,11 @@ next
   then show ?case by (cases e) (auto simp: dsg_def idsg_def)
 qed
 
+lemma idsg_arcs_in_obs:
+  "e \<in> arcs (idsg obs ivo) \<Longrightarrow> odep_head e \<in> all_otxns obs \<and> odep_tail e \<in> all_otxns obs"
+  by (auto simp: idsg_def inferred_ww_depends_def inferred_wr_depends_def
+                 inferred_rw_depends_def dest: recoverable_in_obs)
+
 text \<open>Path vertices of an IDSG path whose edges all involve observed transactions
 are themselves in all_otxns obs.\<close>
 
@@ -491,8 +498,6 @@ theorem cycle_transfer:
     (case e of ODep t1 WW t2 \<Rightarrow> ww_depends h (m t1) (m t2)
              | ODep t1 WR t2 \<Rightarrow> wr_depends h (m t1) (m t2)
              | ODep t1 RW t2 \<Rightarrow> rw_depends h (m t1) (m t2))"
-  and edges_in_obs: "\<And>e. e \<in> set p \<Longrightarrow>
-    odep_head e \<in> all_otxns obs \<and> odep_tail e \<in> all_otxns obs"
   shows "cycle (dsg h) (map (map_dep m) p)"
 proof -
   from cyc obtain u where
@@ -502,6 +507,11 @@ proof -
     unfolding cycle_def by auto
   let ?p' = "map (map_dep m) p"
   have p'_ne: "?p' \<noteq> []" using p_ne by auto
+  have arcs_sub: "set p \<subseteq> arcs (idsg obs ivo)"
+    using p_path unfolding path_def by auto
+  have edges_in_obs: "\<And>e. e \<in> set p \<Longrightarrow>
+    odep_head e \<in> all_otxns obs \<and> odep_tail e \<in> all_otxns obs"
+    using arcs_sub idsg_arcs_in_obs by auto
   have u_in: "u \<in> all_otxns obs"
     using p_path unfolding path_def idsg_def by simp
   have u'_in: "m u \<in> verts (dsg h)"

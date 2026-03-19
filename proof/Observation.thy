@@ -174,13 +174,27 @@ lemma "((could_have_been_written_by obj v ot) \<and> (is_compatible_txn ot atxn)
   oops
 
 
-text \<open>Given an observation, we say a version v of key k is recoverable to a transaction t if t is
-the only transaction which could have written that v of k.\<close>
+text \<open>Given an observation, we say a version v of key k is recoverable to a transaction t if:
+1. There is a unique object with key k in the observation (so THE is well-defined).
+2. t is an observed transaction.
+3. t could have written v (compatible write exists).
+4. t is the only observed transaction that could have written v.\<close>
 
 definition is_recoverable :: "observation \<Rightarrow> key \<Rightarrow> version \<Rightarrow> otxn \<Rightarrow> bool" where
-"is_recoverable obs k v ot \<equiv> (let obj = (THE ob. ob \<in> all_objects obs \<and> key ob = k) in
-                                (could_have_been_written_by obj v ot) \<and>
-                                (\<exists>!t. t \<in> all_otxns obs \<and> could_have_been_written_by obj v t))"
+"is_recoverable obs k v ot \<equiv>
+  (\<exists>!ob. ob \<in> all_objects obs \<and> key ob = k) \<and>
+  ot \<in> all_otxns obs \<and>
+  (let obj = (THE ob. ob \<in> all_objects obs \<and> key ob = k) in
+    (could_have_been_written_by obj v ot) \<and>
+    (\<exists>!t. t \<in> all_otxns obs \<and> could_have_been_written_by obj v t))"
+
+lemma recoverable_unique_obj:
+  "is_recoverable obs k v ot \<Longrightarrow> \<exists>!ob. ob \<in> all_objects obs \<and> key ob = k"
+  unfolding is_recoverable_def by auto
+
+lemma recoverable_in_obs:
+  "is_recoverable obs k v ot \<Longrightarrow> ot \<in> all_otxns obs"
+  unfolding is_recoverable_def by auto
 
 
 
