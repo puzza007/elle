@@ -374,6 +374,28 @@ next
   then show ?case by (cases e) (auto simp: dsg_def idsg_def)
 qed
 
+text \<open>Path vertices of an IDSG path whose edges all involve observed transactions
+are themselves in all_otxns obs.\<close>
+
+lemma idsg_path_verts_in_obs:
+  assumes "u \<in> all_otxns obs"
+  and "\<And>e. e \<in> set p \<Longrightarrow> odep_head e \<in> all_otxns obs \<and> odep_tail e \<in> all_otxns obs"
+  shows "set (path_verts (idsg obs ivo) u p) \<subseteq> all_otxns obs"
+  using assms
+proof (induct p arbitrary: u)
+  case Nil then show ?case by (simp add: idsg_def)
+next
+  case (Cons e es)
+  obtain t1 dt t2 where e_eq: "e = ODep t1 dt t2" by (cases e)
+  have "odep_head e \<in> all_otxns obs \<and> odep_tail e \<in> all_otxns obs"
+    using Cons.prems(2)[of e] by simp
+  then have t1_in: "t1 \<in> all_otxns obs" and t2_in: "t2 \<in> all_otxns obs"
+    using e_eq by auto
+  have "set (path_verts (idsg obs ivo) t1 es) \<subseteq> all_otxns obs"
+    using Cons.hyps[OF t1_in] Cons.prems(2) by auto
+  then show ?case using t2_in e_eq by (auto simp: idsg_def)
+qed
+
 theorem cycle_transfer:
   assumes cyc: "cycle (idsg obs ivo) p"
   and wfi: "wf_interpretation (Interp obs m h)"
@@ -381,7 +403,8 @@ theorem cycle_transfer:
     (case e of ODep t1 WW t2 \<Rightarrow> ww_depends h (m t1) (m t2)
              | ODep t1 WR t2 \<Rightarrow> wr_depends h (m t1) (m t2)
              | ODep t1 RW t2 \<Rightarrow> rw_depends h (m t1) (m t2))"
-  and inj_m: "inj m"
+  and edges_in_obs: "\<And>e. e \<in> set p \<Longrightarrow>
+    odep_head e \<in> all_otxns obs \<and> odep_tail e \<in> all_otxns obs"
   shows "cycle (dsg h) (map (map_dep m) p)"
 proof -
   from cyc obtain u where
@@ -413,8 +436,14 @@ proof -
     using path_verts_map_dep .
   have tl_eq: "tl (path_verts (dsg h) (m u) ?p') = map m (tl (path_verts (idsg obs ivo) u p))"
     using pv_eq map_tl by metis
+  have inj_m: "inj_on m (all_otxns obs)"
+    using wfi by (simp add: total_bij_def bij_betw_def)
+  have "set (path_verts (idsg obs ivo) u p) \<subseteq> all_otxns obs"
+    using idsg_path_verts_in_obs[OF u_in edges_in_obs] .
+  then have verts_in: "set (tl (path_verts (idsg obs ivo) u p)) \<subseteq> all_otxns obs"
+    by (metis list.sel(2) list.set_sel(2) subsetD subsetI)
   have "inj_on m (set (tl (path_verts (idsg obs ivo) u p)))"
-    using inj_m by (meson inj_on_subset top_greatest)
+    using inj_m verts_in by (meson inj_on_subset)
   have dist_ok: "distinct (tl (path_verts (dsg h) (m u) ?p'))"
     unfolding tl_eq distinct_map
     using p_dist \<open>inj_on m (set (tl (path_verts (idsg obs ivo) u p)))\<close> by auto
