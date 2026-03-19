@@ -90,7 +90,6 @@ text \<open>A brief test. We use key variables since key is an opaque typedecl.\
 lemma
   assumes "k1 \<noteq> (k2::key)"
   shows "(let wx1 = (AWrite k1 [0] 1 [1] []);
-              wx2 = (AWrite k1 [1] 2 [2] []);
               wy3 = (AWrite k2 [0] 0 [3] []) in
           {wx1,wy3} = (ext_awrites (ATxn [wx1,wy3,wx1] c)))"
   using assms by (auto simp: Let_def ext_awrites_def ran_def)
